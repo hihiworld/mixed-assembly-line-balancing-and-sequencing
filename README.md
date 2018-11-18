@@ -11,3 +11,5 @@ the contributes of this paper is a CP model and a MIP model, i will write all of
 
 In order to solve MIP model with huge ammount of instance, I use decomposition method, the scheme is 
 A(mip) + P(Dispatching) + D(M or D)
+
+If you feel useful, please give me a STAR.
