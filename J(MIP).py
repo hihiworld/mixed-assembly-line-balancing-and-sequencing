@@ -253,9 +253,10 @@ def setup_constraints(model):
 def setup_objective(model):
     C_max = model.C_max
     model.minimize(C_max)
+    
 
 def solve(model):
-    sol = model.solve()
+    sol = model.solve(agent='local')    #force model to solve locally
     print(sol)
 
 def build(**kwargs):
