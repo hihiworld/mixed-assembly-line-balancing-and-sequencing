@@ -1,273 +1,303 @@
-num_products=3
-num_tasks=5
-num_stations=5
+from docplex.mp.model import Model
+from docplex.util.environment import get_environment
+import json
 
+num_products = 3
+num_tasks = 5
+num_stations = 3
 
-jobs=[
-    ((1,1),1, 1, 4, 1),((1,2),1, 2, 4, 1),
-    ((2,1),2, 1, 2, 2),((2,2),2, 2, 2, 2), ((2,3), 2, 3, 2, 1),
-    ((3,1),2, 1, 2, 3),                       ((3,3), 3, 3, 2, 1),
-    ((4,1),4, 1, 2, 1),((4,2),4, 2, 2, 1), ((4,3), 4, 3, 2, 2),
-                        ((5,2),5, 2, 4, 2), ((5,3), 5, 3, 4, 2)]
+jobs = [
+    (1, 1), (1, 2),
+    (2, 1), (2, 2), (2, 3),
+    (3, 1), (3, 3),
+    (4, 1), (4, 2), (4, 3),
+    (5, 2), (5, 3)]
 
 duration = [
-    [4,2,2,2,4],
-    [4,2,2,0,4],
-    [4,0,2,2,4],
-    [4,2,0,2,4],
-    [4,0,2,2,4]
+            [4, 2, 2, 2, 4],
+            [4, 2, 2, 0, 4],
+            [4, 0, 2, 2, 4]
 ]
 
-workspace=[
-    [1,2,3,1,0],
-    [1,2,3,0,2],
-    [1,0,3,1,2],
-    [1,2,0,1,2],
-    [1,0,3,1,2]
+workspace = [
+        [1, 2, 3, 1, 0],
+        [1, 2, 3, 0, 2],
+        [1, 0, 3, 1, 2]
 ]
 
 presences = [
-    (((1,1), (2,1)), ((2,1), (3,1)), ((1,1), (4,1)), ((2,1), (4,1)), ((3,1), (4,1))),
-    (((1,2), (2,2)), ((1,2), (4,2)), ((1,2), (5,2)), ((2,2), (5,2)), ((4,2), (5,2))),
-    (((2,3), (3,3)), ((2,3), (4,3)), ((2,3), (5,3)), ((3,3), (5,3)), ((4,3), (5,3)))]
-
-stations = [
-    ('stations_1',1, 5),
-    ('stations_2',2, 5),
-    ('stations_3',3, 5),
-    ('stations_4',4, 5),
-    ('stations_5',5, 5)
+    ((1, 1), (2, 1)), ((1, 1), (3, 1)), ((2, 1), (4, 1)), ((3, 1), (4, 1)),
+    ((1, 2), (2, 2)), ((1, 2), (4, 2)), ((2, 2), (5, 2)), ((4, 2), (5, 2)),
+    ((2, 3), (3, 3)), ((2, 3), (4, 3)), ((3, 3), (5, 3)), ((4, 3), (5, 3))
 ]
 
-totalworkspace = [5,5,5,5,5]
+jobsCapableStation = {(1, 1): (1, 2, 3), (1, 2): (1, 2, 3),
+                      (2, 1): (1, 2), (2, 2): (1, 2), (2, 3): (1, 2),
+                      (3, 1): (1, 2, 3), (3, 3): (1, 2, 3),
+                      (4, 1): (1, 3), (4, 2): (1, 3), (4, 3): (1, 3),
+                      (5, 2): (2, 3), (5, 3): (2, 3)}
+
+totalworkspace = [5, 5, 5]
+tasksCapableStation = [(1, 2, 3), (1, 2), (1, 2, 3), (1, 3), (2, 3)]
+
+setofTasks = [(1, 2, 3, 4), (1, 2, 3, 5), (1, 3, 4, 5)]
+
+early = [
+    [4, 6, 6, 8, 0],
+    [4, 6, 0, 6, 10],
+    [0, 2, 4, 4, 8]
+]
+
+def load_lastsol(filename):
+    fp = json.load(open(filename, 'r'))['CPLEXSolution']['variables']
+    P={}
+    for f in fp:
+        if 'X' in f['name']:
+            P[f['name']]=int(1)
+    return P
+
+filename=r'C:\Users\root\PycharmProjects\untitled\decomposition\A.json'
+P = load_lastsol(filename)
 
 
-jobsCapableStation = {(1,1):(1,2,3,4,5), (1,2):(1,2,3,4,5),
-                      (2,1):(1,2,4), (2,2):(1,2,4),(2,3):(1,2,4),
-                      (3,1):(1,2,3,5),(3,3):(1,2,3,5),
-                      (4,1):(1,3,4,5),(4,2):(1,3,4,5),(4,3):(1,3,4,5),
-                      (5,2):(2,3,4,5),(5,3):(2,3,4,5)}
-                      
-tasksCapableStation = [(1,2,3,4,5), (1,2,4), (1,2,3,5), (1,3,4,5), (2,3,4,5)]
+def load_data(model, jobs_, duration_, presences_, ):
+    model.jobs = [job for job in jobs_]
+    model.stations = [m for m in range(1, num_stations+1)]
+    model.productions = [p for p in range(1, num_products+1)]
 
-setofTasks = [(1,2,3,4), (1,2,3,5), (1,3,4,5), (1,2,4,5), (1,3,4,5)]
-
-from collections import namedtuple
-from docplex.mp.model import Model
-from docplex.mp.environment import Environment
-
-
-Tjobs = namedtuple("jobs", ["name", 'tasks', 'productions', 'duration', 'workspace'])
-
-
-def setup_loaddata(model, jobs_, workspace_,duration_,presences_):
-    model.jobs = [Tjobs(*job) for job in jobs_]
-    model.stations = [station for station in range(1, num_stations+1)]
-    model.totalworkspace = totalworkspace
-    model.tasks = [task for task in range(1, num_tasks+1)]
-    model.workspace = workspace_
     model.duration = duration_
     model.presences = presences_
-    model.productions = [production for production in range(1, num_products+1)]
-    
-def setup_variables(model):
-    all_jobs, all_stations = model.jobs, model.stations
-    all_tasks = model.tasks
+
+    fp = json.load(open(filename, 'r'))['CPLEXSolution']['variables']
+    P = {}
+    for f in fp:
+        if 'X' in f['name']:
+            P[f['name']]=int(1)
+
+def setup_var(model):
+    all_jobs = model.jobs
+    all_stations = model.stations
     all_productions = model.productions
 
-    model.X = model.binary_var_matrix(all_stations, all_jobs, name='X')
-    model.Y = model.binary_var_matrix(all_stations, all_tasks, name='Y')
     model.Z = model.binary_var_cube(all_stations, all_jobs, all_jobs, name='Z')
     model.U = model.binary_var_matrix(all_productions, all_productions, name='U')
 
-    model.C = model.integer_var_matrix(all_stations, all_jobs, lb=0, name='CompletTime')
-    model.A = model.integer_var_matrix(all_stations, all_productions, lb=0, name='ArrivalTime')
-    model.D = model.integer_var_matrix(all_stations, all_productions, lb=0, name='DepartTime')
-    model.M = model.integer_var(lb=0, name='makespan')
-    model.W = model.integer_var(lb=0, name='workload')
+    model.C = model.integer_var_matrix(all_stations, all_jobs, name='Compelete')
+    model.A = model.integer_var_matrix(all_stations, all_productions, name='ArrivalTime')
+    model.D = model.integer_var_matrix(all_stations, all_productions, name='DepartTime')
+
     model.C_max = model.integer_var(lb=0, name='C_max')
 
 
-def setup_constraints(model):
+
+def setup_cts(model):
     all_jobs = model.jobs
     all_stations = model.stations
-    all_tasks = model.tasks
     all_productions = model.productions
-    C = model.C
-    X = model.X
-    a = model.workspace
-    Y = model.Y
-    b = model.totalworkspace
-    d = model.duration
-    W = model.W
-    Z= model.Z
     M = 99999
-    C_max = model.C_max
-    D = model.D
-    A = model.A
+    Z = model.Z
     U = model.U
-
+    C = model.C
+    A = model.A
+    D = model.D
+    C_max = model.C_max
+    # 约束3
+    for j in all_jobs:
+        for m in jobsCapableStation[j]:
+            a = 'X_{}_{}'.format(m, j)
+            if a in P.keys():
+                model.add_constraint(C[m, j] >= early[j[1]-1][j[0]-1] * P[a],'ct3_{}_{}'.format(m,j))
 
     # 约束4
-    for job in all_jobs:
-        for station in all_stations:
-            if station in jobsCapableStation[job.name]:
-                model.add_constraint(C[station, job] <= M * X[station, job])
-
+    for j in all_jobs:
+        for m in jobsCapableStation[j]:
+            a = 'X_{}_{}'.format(m, j)
+            if a in P:
+                model.add_constraint(C[m, j] <= M * P[a],'ct4_{}_{}'.format(m,j))
+    #
     # 约束5
     for j in all_jobs:
         for r in all_jobs:
-            if j.productions < r.productions:
-                for station in all_stations:
-                    if station in jobsCapableStation[j.name] and jobsCapableStation[r.name]:
-                            model.add_constraint(C[station, j] + d[station-1][r.tasks-1]
-                                     * X[station, r] <= C[station, r] + M*(1-Z[station, j, r]))
+            if j[1] < r[1]:
+                for m in set(jobsCapableStation[j]).intersection(set(jobsCapableStation[r])):
+                    a = 'X_{}_{}'.format(m, j)
+                    b = 'X_{}_{}'.format(m, r)
+                    if a in P.keys() and b in P.keys():
+                        model.add_constraint(C[m, j] + duration[m - 1][r[0] - 1]
+                                                 * P[b] <= C[m, r] + M * (1 - Z[m, j, r]),'ct6_{}_{}_{}'.format(m,j,r))
+
     # 约束6
     for j in all_jobs:
         for r in all_jobs:
-            if j.productions <= r.productions:
-                for station in all_stations:
-                    if station in jobsCapableStation[j.name] and jobsCapableStation[r.name]:
-                        model.add_constraint(X[station, j]+X[station, r]
-                                     - 2*(Z[station, j, r]+Z[station, r, j]) >= 0)
+            if j[1] < r[1]:
+                for m in set(jobsCapableStation[j]).intersection(set(jobsCapableStation[r])):
+                    a = 'X_{}_{}'.format(m, j)
+                    b = 'X_{}_{}'.format(m, r)
+                    if a in P.keys() and b in P.keys():
+                        model.add_constraint(P[a] + P[b] - 2 * (Z[m, j, r] + Z[m, r, j]) >= 0,'ct6_{}_{}_{}'.format(m,j,r))
 
     # 约束7
     for j in all_jobs:
         for r in all_jobs:
-            if j.productions <= r.productions:
-                for station in all_stations:
-                    if station in jobsCapableStation[j.name] and jobsCapableStation[r.name]:
-                        model.add_constraint(X[station, j]+X[station, r]
-                                     <= Z[station, j, r] + Z[station, r, j] + 1)
+            if j[1] < r[1]:
+                for m in set(jobsCapableStation[j]).intersection(set(jobsCapableStation[r])):
+                    a = 'X_{}_{}'.format(m, j)
+                    b = 'X_{}_{}'.format(m, r)
+                    if a in P.keys() and b in P.keys():
+                        model.add_constraint(P[a] + P[b] <= Z[m, j, r] + Z[m, r, j] + 1,'ct7_{}_{}_{}'.format(m,j,r))
+
     # 约束8
     for j in all_jobs:
         for r in all_jobs:
-            if j.tasks != r.tasks and j.productions == r.productions:
-                for station in all_stations:
-                    if station in jobsCapableStation[j.name] and jobsCapableStation[r.name]:
-                        model.add_constraint(C[station, j] + d[station-1][r.tasks-1]*X[station, r]
-                                     <= C[station, r] + M*(1-Z[station, j, r]))
+            if j[0] != r[0] and j[1] == r[1]:
+                for m in set(jobsCapableStation[j]).intersection(set(jobsCapableStation[r])):
+                    b = 'X_{}_{}'.format(m, r)
+                    a = 'X_{}_{}'.format(m, j)
+                    if b in P.keys() and a in P.keys():
+                        model.add_constraint(C[m, j] + duration[m - 1][r[0] - 1] * P[b]
+                                         <= C[m, r] + M * (1 - Z[m, j, r]),'ct8_{}_{}_{}'.format(m,j,r))
     # 约束9
     for j in all_jobs:
         for r in all_jobs:
-            if j.tasks != r.tasks and j.productions == r.productions:
-                for station in all_stations:
-                    if station in jobsCapableStation[j.name] and jobsCapableStation[r.name]:
-                        model.add_constraint(X[station, j] + X[station, r] -2*(Z[station, j, r]+Z[station, r, j]) >= 0)
+            if j[0] != r[0] and j[1] == r[1]:
+                for m in set(jobsCapableStation[j]).intersection(set(jobsCapableStation[r])):
+                    a = 'X_{}_{}'.format(m, j)
+                    b = 'X_{}_{}'.format(m, r)
+                    if a in P.keys() and b in P.keys():
+                        model.add_constraint(
+                                    P[a] + P[b] - 2 * (Z[m, j, r] + Z[m, r, j]) >= 0,
+                                    'ct9_{}_{}_{}.for'.format(m,j,r))
 
     # 约束10
     for j in all_jobs:
         for r in all_jobs:
-            if j.tasks != r.tasks and j.productions == r.productions:
-                for station in all_stations:
-                    if station in jobsCapableStation[j.name] and jobsCapableStation[r.name]:
-                        model.add_constraint(X[station, j] + X[station, r] <= Z[station, j, r]+Z[station, r, j] + 1)
+            if j[0] != r[0] and j[1] == r[1]:
+                for m in set(jobsCapableStation[j]).intersection(set(jobsCapableStation[r])):
+                    a = 'X_{}_{}'.format(m, j)
+                    b = 'X_{}_{}'.format(m, r)
+                    if a in P.keys() and b in P.keys():
+                        model.add_constraint(P[a] + P[b] <= Z[m, j, r] + Z[m, r, j] + 1,
+                                                 'ct10_{}_{}_{}'.format(m,j,r))
 
     # 约束11
-    for job in all_jobs:
-        for station in all_stations:
-            if station in jobsCapableStation[job.name]:
-                model.add_constraint(C[station, job] <= C_max)
+    for j in all_jobs:
+        for m in jobsCapableStation[j]:
+            model.add_constraint(C[m,j] <= C_max,'ct11_{}_{}'.format(m, j))
 
     # 约束12
-    for job in all_jobs:
-        for station in all_stations:
-            if station not in jobsCapableStation[job.name]:
-                model.add_constraint(C[station, job] <= 0)
-                model.add_constraint(X[station, job] <= 0)
+    for j in all_jobs:
+        for m in all_stations:
+            if 'X_{}_{}'.format(m,j) not in P.keys():
+                model.add_constraint(C[m, j] <= 0,'ct12_C_{}_{}'.format(m,j))
+                # model.add_constraint(X[m, j] <= 0,'ct12_X_{}_{}'.format(m,j))
 
     # 约束13
-    for s in presences:
-        for p in s:
-            for station_m in all_stations:
-                if station_m in jobsCapableStation[p[0]]:
-                    for station_i in all_stations:
-                        if station_i in jobsCapableStation[p[1]]:
-                            for job_1 in all_jobs:
-                                if job_1.name == p[0]:
-                                    for job_2 in all_jobs:
-                                        if job_2.name == p[1]:
-                                            model.add_constraint(C[station_m, job_2] >= C[station_i, job_1] +
-                                                 d[station_m-1][job_2.tasks-1] - M * (1-X[station_m, job_2]))
+    for p in presences:
+        for i in jobsCapableStation[p[0]]:
+            for m in jobsCapableStation[p[1]]:
+                a = 'X_{}_{}'.format(m, p[1])
+                if a in P.keys():
+                    model.add_constraint(C[m, p[1]] >= C[i, p[0]] + duration[m-1][p[1][0]-1] - M*(1-P[a]),
+                                     'ct13_{}_{}_{}'.format(p, i, m))
 
     # 约束15
-    # 约束16
+    for j in all_jobs:
+        for m in jobsCapableStation[j]:
+            model.add_constraint(C[m, j] >= 0,'ct15_C_{}_{}'.format(m,j))
+            model.add_constraint(C_max >= 0,'ct15_C_max_{}_{}'.format(m,j))
+
+    # 约束21
+    for v in all_productions:
+        model.add_constraint(model.sum(U[v, p] for p in all_productions) == 1)
+
+    # 约束22
+    for p in all_productions:
+        model.add_constraint(model.sum(U[v, p] for v in all_productions) == 1)
+
     # 约束23
-    
     for p in all_productions:
         for q in all_productions:
             for v in all_productions:
-                if p != q and v == 1:
-                    for station in all_stations:
-                        model.add_constraint(D[station, p] - A[station, q] <= M*(2-U[v, p]) - U[v+1, q])
-                        
+                if p != q and v ==1:
+                    for m in all_stations:
+                        model.add_constraint(D[m, p] - A[m, q] <= M * (2 - U[v, p]) - U[v + 1, q],
+                                             'ct23_{}_{}_{}_{}'.format(m,p,q,v))
+
     # 约束24
     for p in all_productions:
         for q in all_productions:
             for v in all_productions:
                 if p != q and v > 1:
-                    for station in all_stations:
-                        model.add_constraint(D[station, p] - A[station, q] <= M*(2-U[v-1, p]) - U[v, q])
-                        
+                    for m in all_stations:
+                        model.add_constraint(D[m, p] - A[m, q] <= M * (2 - U[v - 1, p] - U[v, q]),
+                                             'ct24_{}_{}_{}_{}'.format(m,p,q,v))
+
     # 约束25
-    for station in all_stations:
-        for p in all_productions:
-            if station < num_stations:
-                model.add_constraint(A[station+1, p] == D[station, p])
+    for p in all_productions:
+        for m in all_stations:
+            if m < num_stations:
+                model.add_constraint(A[m + 1, p] == D[m, p],'ct25_{}_{}'.format(m,p))
 
     # 约束26
-    for station in all_stations:
-        for p in all_productions:
-            if station == num_stations:
-                model.add_constraint(A[station, p] == D[station-1, p])
-                
+    for p in all_productions:
+        for m in all_stations:
+            if m == num_stations:
+                model.add_constraint(A[m, p] == D[m - 1, p],'ct26_{}_{}'.format(m,p))
 
     # 约束28
     for m in all_stations:
         for p in all_productions:
-            model.add_constraint(A[m, p] >= 0)
-            model.add_constraint(D[m, p] >= 0)
+            model.add_constraint(A[m, p] >= 0,'ct28_{}_{}'.format(m,p))
+            model.add_constraint(D[m, p] >= 0,'ct28_{}_{}'.format(m,p))
 
     # 约束31
-        for j in all_jobs:
-            for m in all_stations:
-                if m in jobsCapableStation[j.name]:
-                    model.add_constraint(A[m, j.productions] <= C[m, j] - d[m-1][j.tasks-1]*X[m, j] + M*(1-X[m, j]))
+    for j in all_jobs:
+        for m in jobsCapableStation[j]:
+            a = 'X_{}_{}'.format(m, j)
+            if a in P.keys():
+                model.add_constraint(
+                        A[m, j[1]] <= C[m, j] - duration[m - 1][j[0] - 1] * P[a]+ M * (1 - P[a]),
+                        'ct31_{}_{}'.format(m,j))
 
     # 约束32
     for j in all_jobs:
-        for m in all_stations:
-            if m in jobsCapableStation[j.name]:
-                model.add_constraint(D[m, j.productions] >= C[m, j])
-                
-    # 约束33
-    for m in all_stations:
-        for p in all_productions:
-            model.add_constraint(D[m, p] >= A[m, p] + model.sum(d[m-1][j.tasks-1]*X[m, j] for j in all_jobs if j.productions == p))
+        for m in jobsCapableStation[j]:
+            a = 'X_{}_{}'.format(m, j)
+            if a in P.keys():
+                model.add_constraint(D[m, j[1]] >= C[m, j],'ct32_{}_{}'.format(m,j))
 
     # 约束33
     for m in all_stations:
         for p in all_productions:
-            model.add_constraint(D[m,p] <= C_max)
+            model.add_constraint(
+                    D[m, p] >= A[m, p] +
+                    model.sum(duration[m - 1][j[0] - 1] * P['X_{}_{}'.format(m, j)] for j in all_jobs
+                                                   if j[1] == p and 'X_{}_{}'.format(m, j) in P.keys()),
+                    'ct33_{}_{}'.format(m, p))
 
-def setup_objective(model):
-    C_max = model.C_max
-    model.minimize(C_max)
-    
+    # 约束34
+    for m in all_stations:
+        for p in all_productions:
+            model.add_constraint(D[m, p] <= C_max, 'ct34_{}_{}'.format(m, p))
+
+def setup_obj(model):
+    model.minimize(model.C_max)
 
 def solve(model):
-    sol = model.solve(agent='local')    #force model to solve locally
+    sol = model.solve()
     print(sol)
 
 def build(**kwargs):
-    mdl = Model('dd')
-    setup_loaddata(mdl, jobs, workspace, duration, presences)
-    setup_variables(mdl)
-    setup_constraints(mdl)
-    setup_objective(mdl)
+    mdl = Model()
+    load_data(mdl, jobs,  duration,presences)
+    setup_var(mdl)
+    setup_cts(mdl)
+    setup_obj(mdl)
     return mdl
 
 
 if __name__ == '__main__':
     model = build()
     solve(model)
+    with get_environment().get_output_stream('PJ.json') as fp:
+        model.solution.export(fp, 'json')
