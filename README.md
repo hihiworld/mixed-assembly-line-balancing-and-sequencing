@@ -11,7 +11,7 @@ doi：10.1007/s10601-013-9142-6
 the contributes of this paper is proposing a CP model and a MIP model, I will finish all of them in futrue.
 
 In order to solve MIP model with huge ammount of instance, I will use decomposition method of this paper, the scheme is 
-A(mip) + P(Dispatching) + J(M or D)
+A(mip) + PJ(mip)
 
 A(mip) is a typically RCPSP(Resource Constrained Project Scheduling Problem)
 
