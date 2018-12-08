@@ -220,7 +220,7 @@ def setup_cts(model):
             for v in all_productions:
                 if p != q and v ==1:
                     for m in all_stations:
-                        model.add_constraint(D[m, p] - A[m, q] <= M * (2 - U[v, p]) - U[v + 1, q],
+                        model.add_constraint(D[m, p] - A[m, q] <= M * (2 - U[v, p] - U[v + 1, q]),
                                              'ct23_{}_{}_{}_{}'.format(m,p,q,v))
 
     # 约束24
